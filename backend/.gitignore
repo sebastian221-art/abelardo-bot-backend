@@ -1,0 +1,47 @@
+# Entorno virtual
+venv/
+.venv/
+env/
+
+# Base de datos local
+*.db
+*.sqlite
+*.sqlite3
+
+# Variables de entorno (NUNCA subir a GitHub)
+.env
+.env.local
+.env.production
+.package-lock.json
+
+
+# Carpeta de ChromaDB y datos generados
+data/chroma_db/
+
+# Cache de Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Logs
+*.log
+logs/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDEs
+.vscode/
+.idea/
+*.suo
+*.user
+
+# Archivos temporales
+*.tmp
+*.temp
+tmp/
+temp/
