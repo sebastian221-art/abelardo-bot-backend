@@ -108,3 +108,27 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000,
                 reload=True, log_level="critical", access_log=False)
+
+## ─── AGREGAR ESTO AL FINAL DE main.py ────────────────────────────
+## Justo antes del bloque:  if __name__ == "__main__":
+
+import threading
+import urllib.request
+
+def _keep_alive():
+    """Hace ping al propio servidor cada 9 minutos para evitar el sleep de Render."""
+    import time
+    # Espera 2 minutos al arrancar antes del primer ping
+    time.sleep(120)
+    while True:
+        try:
+            url = "https://abelardo-bot-backend.onrender.com/health"
+            urllib.request.urlopen(url, timeout=10)
+            log.info("Keep-alive ping OK")
+        except Exception as e:
+            log.warning(f"Keep-alive falló: {e}")
+        time.sleep(540)   # 9 minutos
+
+# Arranca el hilo en background al iniciar el servidor
+_keep_alive_thread = threading.Thread(target=_keep_alive, daemon=True)
+_keep_alive_thread.start()
