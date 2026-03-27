@@ -1,7 +1,4 @@
-# 📄 backend/services/segmentation.py
-"""
-Segmentación de contactos para broadcasts.
-"""
+# 📄 backend/services/segmentation.py  ← REEMPLAZA EL ANTERIOR
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from models.contact import Contact
@@ -9,24 +6,27 @@ from models.contact import Contact
 
 def get_contacts_for_broadcast(
     db:            Session,
-    segment:       str   = "opted_in",
-    segment_value: str   = "",
+    segment:       str = "todos",
+    segment_value: str = "",
 ) -> list[Contact]:
     """
-    Retorna la lista de contactos según el segmento elegido.
-
     Segmentos disponibles:
-    - "all"         → todos los contactos importados (firmantes)
+    - "todos"       → todos los contactos importados
+    - "all"         → alias de todos
     - "opted_in"    → solo los que aceptaron recibir mensajes
-    - "city"        → filtrados por ciudad  (segment_value = nombre ciudad)
-    - "department"  → filtrados por depto   (segment_value = nombre dpto)
-    - "interest"    → filtrados por interés (segment_value = tema)
+    - "city"        → filtrados por ciudad
+    - "department"  → filtrados por departamento
+    - "interest"    → filtrados por interés
     - "segment"     → filtrados por segmento (general/activo/embajador)
     """
-    q = db.query(Contact).filter(Contact.opted_in == True)
+    # Base: todos los contactos
+    q = db.query(Contact)
 
-    if segment == "all":
-        q = db.query(Contact)  # sin filtro de opt-in
+    if segment in ("todos", "all"):
+        pass  # sin filtro — todos
+
+    elif segment == "opted_in":
+        q = q.filter(Contact.opted_in == True)
 
     elif segment == "city" and segment_value:
         q = q.filter(func.lower(Contact.city) == segment_value.lower())
@@ -45,17 +45,16 @@ def get_contacts_for_broadcast(
 
 def count_contacts_for_broadcast(
     db:            Session,
-    segment:       str = "opted_in",
+    segment:       str = "todos",
     segment_value: str = "",
 ) -> int:
     return len(get_contacts_for_broadcast(db, segment, segment_value))
 
 
 def get_city_stats(db: Session) -> list[dict]:
-    """Retorna cantidad de contactos opt-in por ciudad."""
     rows = (
         db.query(Contact.city, func.count(Contact.id).label("total"))
-        .filter(Contact.opted_in == True, Contact.city != None)
+        .filter(Contact.city != None)
         .group_by(Contact.city)
         .order_by(func.count(Contact.id).desc())
         .all()
@@ -64,7 +63,6 @@ def get_city_stats(db: Session) -> list[dict]:
 
 
 def get_ambassador_ranking(db: Session, limit: int = 20) -> list[dict]:
-    """Ranking de embajadores por cantidad de referidos."""
     rows = (
         db.query(Contact)
         .filter(Contact.referrals > 0)

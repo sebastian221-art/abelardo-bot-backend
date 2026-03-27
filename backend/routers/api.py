@@ -1,4 +1,4 @@
-# 📄 backend/routers/api.py  ← VERSIÓN COMPLETA (reemplaza la anterior)
+# 📄 backend/routers/api.py  ← REEMPLAZA EL ANTERIOR
 """
 Endpoints generales del panel: contactos, conversaciones, stats, chat-test.
 """
@@ -95,6 +95,46 @@ def contact_conversations(phone: str, limit: int = 50, db: Session = Depends(get
     return [r.to_dict() for r in reversed(rows)]
 
 
+# ── Crear contacto manual ─────────────────────────────────────────
+
+class ContactIn(BaseModel):
+    phone:      str
+    name:       str  = ""
+    city:       str  = ""
+    department: str  = ""
+    opted_in:   bool = False
+
+
+@router.post("/contacts", status_code=201)
+def create_contact(body: ContactIn, db: Session = Depends(get_db)):
+    """Crea un contacto individual manualmente desde el panel."""
+    phone = body.phone.strip().replace(" ", "").replace("+", "")
+    if not phone:
+        raise HTTPException(status_code=400, detail="Teléfono obligatorio")
+    if not phone.startswith("57"):
+        phone = "57" + phone
+
+    existing = db.query(Contact).filter(Contact.phone == phone).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="El contacto ya existe")
+
+    contact = Contact(
+        phone      = phone,
+        name       = body.name.strip() or None,
+        city       = body.city.strip() or None,
+        department = body.department.strip() or None,
+        opted_in   = body.opted_in,
+        source     = "manual",
+        segment    = "general",
+    )
+    db.add(contact)
+    db.commit()
+    db.refresh(contact)
+    return contact.to_dict()
+
+
+# ── Importar CSV ──────────────────────────────────────────────────
+
 @router.post("/contacts/import")
 async def import_contacts(
     file: UploadFile = File(...),
@@ -182,7 +222,6 @@ class ChatTestIn(BaseModel):
 async def chat_test(body: ChatTestIn, db: Session = Depends(get_db)):
     """
     Prueba el bot directamente desde el panel sin necesitar WhatsApp.
-    Simula un mensaje entrante y retorna la respuesta del bot.
     """
     phone   = body.phone.strip()
     message = body.message.strip()
@@ -190,7 +229,6 @@ async def chat_test(body: ChatTestIn, db: Session = Depends(get_db)):
     if not message:
         raise HTTPException(status_code=400, detail="El mensaje no puede estar vacío")
 
-    # Obtener o crear contacto de prueba
     contact = db.query(Contact).filter(Contact.phone == phone).first()
     if not contact:
         contact = Contact(phone=phone, name="Prueba Panel", source="panel")
@@ -198,7 +236,6 @@ async def chat_test(body: ChatTestIn, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(contact)
 
-    # Historial reciente
     history_rows = (
         db.query(Conversation)
         .filter(Conversation.phone == phone)
@@ -208,7 +245,6 @@ async def chat_test(body: ChatTestIn, db: Session = Depends(get_db)):
     )
     history = [{"role": r.role, "content": r.message} for r in reversed(history_rows)]
 
-    # Detectar intención y guardar mensaje
     from services.ai import process_message, detect_intent
     intent = detect_intent(message)
     db.add(Conversation(phone=phone, role="user", message=message, intent=intent))
@@ -216,7 +252,6 @@ async def chat_test(body: ChatTestIn, db: Session = Depends(get_db)):
     contact.last_seen  = datetime.utcnow()
     db.commit()
 
-    # Generar respuesta
     reply, detected_intent = await process_message(
         phone=        phone,
         message=      message,
@@ -224,7 +259,6 @@ async def chat_test(body: ChatTestIn, db: Session = Depends(get_db)):
         contact_name= "Usuario Panel",
     )
 
-    # Guardar respuesta
     db.add(Conversation(phone=phone, role="assistant", message=reply, intent=detected_intent))
     db.commit()
 
