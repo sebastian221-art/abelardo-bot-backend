@@ -32,6 +32,47 @@ async def send_text(to: str, message: str) -> bool:
     })
 
 
+async def send_template(to: str, name: str, image_url: str = "", param: str = "") -> bool:
+    """
+    Envía una plantilla aprobada por Meta.
+    - name:      nombre de la plantilla (ej: bienvenida_campana)
+    - image_url: URL pública de la imagen del encabezado (opcional)
+    - param:     valor del {{1}} en el cuerpo (nombre del contacto)
+    """
+    components = []
+
+    # Encabezado con imagen
+    if image_url:
+        components.append({
+            "type": "header",
+            "parameters": [{
+                "type":  "image",
+                "image": {"link": image_url}
+            }]
+        })
+
+    # Cuerpo con variable {{1}}
+    if param:
+        components.append({
+            "type": "body",
+            "parameters": [{
+                "type": "text",
+                "text": param
+            }]
+        })
+
+    return await _post({
+        "messaging_product": "whatsapp",
+        "to":                to,
+        "type":              "template",
+        "template": {
+            "name":      name,
+            "language":  {"code": "es"},
+            "components": components
+        }
+    })
+
+
 async def send_image(to: str, image_url: str, caption: str = "") -> bool:
     return await _post({
         "messaging_product": "whatsapp",
