@@ -122,3 +122,20 @@ def delete_doc(doc_id: int, db: Session = Depends(get_db)):
     db.delete(doc)
     db.commit()
     return {"ok": True, "deleted": doc_id}
+
+# 📄 backend/routers/knowledge.py  ← AGREGA este endpoint al final
+"""
+Agrega este endpoint al router de knowledge existente.
+Pégalo al final de tu backend/routers/knowledge.py actual.
+"""
+
+# ── Agregar al final de knowledge.py ─────────────────────────────
+
+@router.post("/knowledge/refresh-web")
+def refresh_web(db: Session = Depends(get_db)):
+    """Vuelve a hacer scraping del sitio web oficial y actualiza el RAG."""
+    from services.rag import refresh_web_scrape
+    ok = refresh_web_scrape()
+    if ok:
+        return {"ok": True, "message": "Sitio web actualizado en el RAG ✅"}
+    raise HTTPException(status_code=500, detail="No se pudo actualizar el sitio web")
