@@ -1,5 +1,5 @@
 # 📄 backend/main.py  ← REEMPLAZA EL ANTERIOR
-import logging, os, sys
+import logging, sys, threading, urllib.request
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -38,7 +38,9 @@ from routers.webhook   import router as webhook_router
 from routers.api       import router as api_router
 from routers.broadcast import router as broadcast_router
 from routers.auth      import router as auth_router
-from routers.knowledge import router as knowledge_router   # ← NUEVO
+from routers.knowledge import router as knowledge_router
+from routers.groups    import router as groups_router
+from routers.heygen    import router as heygen_router
 
 settings = get_settings()
 
@@ -82,21 +84,44 @@ async def lifespan(app: FastAPI):
     print(f"  {CYAN}📊  Panel{RESET}    →  http://localhost:3000")
     print(f"  {CYAN}📖  Docs{RESET}     →  http://localhost:8000/docs")
     print(f"{sep}\n")
+
+    # Keep-alive thread
+    def _keep_alive():
+        import time
+        time.sleep(120)
+        while True:
+            try:
+                urllib.request.urlopen(
+                    "https://abelardo-bot-backend.onrender.com/health", timeout=10
+                )
+                log.info("Keep-alive ping OK")
+            except Exception as e:
+                log.warning(f"Keep-alive falló: {e}")
+            time.sleep(540)
+
+    threading.Thread(target=_keep_alive, daemon=True).start()
+
     yield
     print(f"\n{GREY}  ─  Servidor detenido{RESET}\n")
 
-app = FastAPI(title=settings.APP_NAME, version="1.0.0", lifespan=lifespan,
-              docs_url="/docs" if settings.DEBUG else None)
+app = FastAPI(
+    title=settings.APP_NAME, version="1.0.0", lifespan=lifespan,
+    docs_url="/docs" if settings.DEBUG else None,
+)
 
 app.middleware("http")(_log_req)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True,
-                   allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware, allow_origins=["*"], allow_credentials=True,
+    allow_methods=["*"], allow_headers=["*"],
+)
 
 app.include_router(webhook_router)
 app.include_router(api_router)
 app.include_router(broadcast_router)
 app.include_router(auth_router)
-app.include_router(knowledge_router)   # ← NUEVO
+app.include_router(knowledge_router)
+app.include_router(groups_router)
+app.include_router(heygen_router)
 
 @app.get("/")
 async def root(): return {"status": "online", "app": settings.APP_NAME}
@@ -108,27 +133,3 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000,
                 reload=True, log_level="critical", access_log=False)
-
-## ─── AGREGAR ESTO AL FINAL DE main.py ────────────────────────────
-## Justo antes del bloque:  if __name__ == "__main__":
-
-import threading
-import urllib.request
-
-def _keep_alive():
-    """Hace ping al propio servidor cada 9 minutos para evitar el sleep de Render."""
-    import time
-    # Espera 2 minutos al arrancar antes del primer ping
-    time.sleep(120)
-    while True:
-        try:
-            url = "https://abelardo-bot-backend.onrender.com/health"
-            urllib.request.urlopen(url, timeout=10)
-            log.info("Keep-alive ping OK")
-        except Exception as e:
-            log.warning(f"Keep-alive falló: {e}")
-        time.sleep(540)   # 9 minutos
-
-# Arranca el hilo en background al iniciar el servidor
-_keep_alive_thread = threading.Thread(target=_keep_alive, daemon=True)
-_keep_alive_thread.start()

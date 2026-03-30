@@ -4,24 +4,25 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    APP_NAME:              str  = "ChatBot Abelardo 2026"
-    DEBUG:                 bool = False
-    DATABASE_URL:          str  = "sqlite:///./abelardo.db"
-    SECRET_KEY:            str  = "cambia_esto_en_produccion"
+    APP_NAME:             str  = "ChatBot Abelardo 2026"
+    DEBUG:                bool = False
+    DATABASE_URL:         str  = "sqlite:///./abelardo.db"
+    SECRET_KEY:           str  = "cambia_esto_en_produccion"
 
     # WhatsApp
-    WHATSAPP_TOKEN:        str  = ""
-    WHATSAPP_PHONE_ID:     str  = ""
-    WEBHOOK_VERIFY_TOKEN:  str  = "abelardo2026_verify"
+    WHATSAPP_TOKEN:       str  = ""
+    WHATSAPP_PHONE_ID:    str  = ""
+    WEBHOOK_VERIFY_TOKEN: str  = "abelardo2026_verify"
 
     # Groq
-    GROQ_API_KEY:          str  = ""
+    GROQ_API_KEY:         str  = ""
 
-    # HeyGen (opcional)
-    HEYGEN_API_KEY:        str  = ""
+    # HeyGen
+    HEYGEN_API_KEY:       str  = ""
+    HEYGEN_AVATAR_ID:     str  = ""
 
-    # Web scraping RAG
-    RAG_SCRAPE_URL:        str  = "https://defensoresdelapatria.com"
+    # RAG scraping
+    RAG_SCRAPE_URL:       str  = "https://defensoresdelapatria.com"
 
     class Config:
         env_file = ".env"
