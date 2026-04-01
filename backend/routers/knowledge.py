@@ -139,3 +139,59 @@ def refresh_web(db: Session = Depends(get_db)):
     if ok:
         return {"ok": True, "message": "Sitio web actualizado en el RAG ✅"}
     raise HTTPException(status_code=500, detail="No se pudo actualizar el sitio web")
+# ── AGREGAR AL FINAL de backend/routers/knowledge.py ─────────────
+
+class ScrapeIn(BaseModel):
+    url: str
+
+
+@router.post("/knowledge/scrape")
+async def scrape_url(body: ScrapeIn, db: Session = Depends(get_db)):
+    """Importa contenido de una URL y lo agrega a la base de conocimiento."""
+    from services.rag import scrape_website
+    import re
+
+    url     = body.url.strip()
+    if not url.startswith("http"):
+        raise HTTPException(status_code=400, detail="URL inválida")
+
+    content = scrape_website(url)
+    if not content or len(content) < 100:
+        raise HTTPException(status_code=400, detail="No se pudo extraer contenido de esa URL")
+
+    # Generar título desde la URL
+    slug  = url.replace("https://","").replace("http://","").replace("/","-").strip("-")
+    title = f"Web: {slug[:80]}"
+
+    # Buscar si ya existe
+    existing = db.query(KnowledgeDoc).filter(
+        KnowledgeDoc.title == title
+    ).first()
+
+    if existing:
+        existing.content    = content[:10000]
+        existing.updated_at = datetime.utcnow()
+        existing.active     = True
+        db.commit()
+        return {"ok": True, "message": f"Documento actualizado: {title}", "chars": len(content)}
+
+    doc = KnowledgeDoc(
+        title    = title,
+        category = "general",
+        content  = content[:10000],
+        source   = "web_scrape",
+        active   = True,
+    )
+    db.add(doc)
+    db.commit()
+    return {"ok": True, "message": f"Documento importado: {title}", "chars": len(content)}
+
+
+@router.post("/knowledge/load-defaults")
+def load_defaults(db: Session = Depends(get_db)):
+    """Carga los documentos por defecto de Abelardo."""
+    from services.rag import load_documents_to_rag
+
+    # Forzar recarga
+    count = load_documents_to_rag()
+    return {"ok": True, "created": count}

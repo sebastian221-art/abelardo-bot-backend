@@ -154,3 +154,135 @@ def broadcast_logs(
     total = q.count()
     items = q.offset((page - 1) * limit).limit(limit).all()
     return {"total": total, "items": [i.to_dict() for i in items]}
+# ── AGREGAR AL FINAL de backend/routers/broadcast.py ─────────────
+
+@router.post("/{broadcast_id}/pause")
+def pause_broadcast(broadcast_id: int, db: Session = Depends(get_db)):
+    """Pausa un broadcast en curso."""
+    b = db.query(Broadcast).filter(Broadcast.id == broadcast_id).first()
+    if not b:
+        raise HTTPException(status_code=404, detail="Broadcast no encontrado")
+    if b.status != "sending":
+        raise HTTPException(status_code=400, detail="Solo se puede pausar un broadcast en envío")
+    b.status = "paused"
+    db.commit()
+    return {"ok": True, "broadcast_id": broadcast_id}
+
+
+@router.post("/{broadcast_id}/resume")
+def resume_broadcast(
+    broadcast_id:     int,
+    background_tasks: BackgroundTasks,
+    db:               Session = Depends(get_db),
+):
+    """Reanuda un broadcast pausado."""
+    b = db.query(Broadcast).filter(Broadcast.id == broadcast_id).first()
+    if not b:
+        raise HTTPException(status_code=404, detail="Broadcast no encontrado")
+    if b.status != "paused":
+        raise HTTPException(status_code=400, detail="Solo se puede reanudar un broadcast pausado")
+    b.status = "sending"
+    db.commit()
+    background_tasks.add_task(_run_broadcast, broadcast_id)
+    return {"ok": True, "message": "Broadcast reanudado", "broadcast_id": broadcast_id}
+
+
+@router.post("/{broadcast_id}/duplicate")
+def duplicate_broadcast(broadcast_id: int, db: Session = Depends(get_db)):
+    """Duplica un broadcast existente como nuevo borrador."""
+    original = db.query(Broadcast).filter(Broadcast.id == broadcast_id).first()
+    if not original:
+        raise HTTPException(status_code=404, detail="Broadcast no encontrado")
+
+    nuevo = Broadcast(
+        title         = f"{original.title} (copia)",
+        message       = original.message,
+        template_name = original.template_name,
+        segment       = original.segment,
+        segment_value = original.segment_value,
+        media_url     = original.media_url,
+        media_type    = original.media_type,
+        status        = "draft",
+        created_by    = original.created_by,
+    )
+    db.add(nuevo)
+    db.commit()
+    db.refresh(nuevo)
+    log.info(f"Broadcast {broadcast_id} duplicado → {nuevo.id}")
+    return nuevo.to_dict()
+# ── AGREGAR AL FINAL de backend/routers/broadcast.py ─────────────
+
+@router.get("/{broadcast_id}/survey-results")
+def survey_results(broadcast_id: int, db: Session = Depends(get_db)):
+    """
+    Analiza las respuestas recibidas de una encuesta.
+    Busca mensajes de usuarios que respondieron con 1, 2, 3, 4 o 5
+    después de que se envió el broadcast.
+    """
+    from models.conversation import Conversation
+    from models.broadcast_log import BroadcastLog
+    import re
+
+    broadcast = db.query(Broadcast).filter(Broadcast.id == broadcast_id).first()
+    if not broadcast:
+        raise HTTPException(status_code=404, detail="Broadcast no encontrado")
+
+    # Extraer opciones del mensaje
+    lines = (broadcast.message or "").split("\n")
+    opciones = []
+    for line in lines:
+        line = line.strip()
+        if re.match(r'^[1-5]️⃣', line) or re.match(r'^[1-5]\s', line):
+            # Limpiar el emoji del número
+            clean = re.sub(r'^[1-5]️⃣\s*', '', line).strip()
+            clean = re.sub(r'^[1-5]\s+', '', clean).strip()
+            if clean:
+                opciones.append(clean)
+
+    if not opciones:
+        return []
+
+    # Teléfonos que recibieron el broadcast
+    phones = [
+        log.phone for log in
+        db.query(BroadcastLog)
+        .filter(BroadcastLog.broadcast_id == broadcast_id, BroadcastLog.status == "sent")
+        .all()
+    ]
+
+    if not phones or not broadcast.sent_at:
+        return []
+
+    # Buscar respuestas numéricas después del envío
+    counts = [0] * len(opciones)
+    total  = 0
+
+    responses = (
+        db.query(Conversation)
+        .filter(
+            Conversation.phone.in_(phones),
+            Conversation.role == "user",
+            Conversation.timestamp >= broadcast.sent_at,
+        )
+        .all()
+    )
+
+    for r in responses:
+        msg = (r.message or "").strip()
+        # Detectar respuesta numérica (1, 2, 3, etc.)
+        match = re.match(r'^([1-5])\b', msg)
+        if match:
+            idx = int(match.group(1)) - 1
+            if 0 <= idx < len(opciones):
+                counts[idx] += 1
+                total += 1
+
+    total = total or 1  # evitar división por cero
+    return [
+        {
+            "option":  op,
+            "count":   counts[i],
+            "percent": round((counts[i] / total) * 100),
+        }
+        for i, op in enumerate(opciones)
+    ]
