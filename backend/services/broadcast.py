@@ -1,4 +1,4 @@
-# 📄 backend/services/broadcast.py
+# 📄 backend/services/broadcast.py  ← REEMPLAZA EL ANTERIOR
 """
 Motor de envíos masivos (broadcasts).
 Soporta texto libre y plantillas aprobadas por Meta.
@@ -32,6 +32,15 @@ async def execute_broadcast(db: Session, broadcast_id: int) -> dict:
     if broadcast.status not in ("draft", "scheduled"):
         raise ValueError(f"Broadcast ya fue enviado (estado: {broadcast.status})")
 
+    # ── Validación: plantilla con imagen obligatoria ───────────────
+    if broadcast.template_name and not broadcast.media_url:
+        broadcast.status = "failed"
+        db.commit()
+        raise ValueError(
+            f"La plantilla '{broadcast.template_name}' requiere una imagen en el encabezado. "
+            "Crea el broadcast de nuevo e incluye la URL de la imagen."
+        )
+
     contacts: list[Contact] = get_contacts_for_broadcast(
         db, broadcast.segment, broadcast.segment_value or ""
     )
@@ -43,12 +52,21 @@ async def execute_broadcast(db: Session, broadcast_id: int) -> dict:
     sent = failed = 0
 
     for contact in contacts:
+        # Respetar pausa si fue pausado
+        current = db.query(Broadcast).filter(Broadcast.id == broadcast_id).first()
+        if current and current.status == "paused":
+            log.info(f"Broadcast {broadcast_id} pausado en {sent + failed}/{len(contacts)}")
+            broadcast.sent_count   = sent
+            broadcast.failed_count = failed
+            db.commit()
+            return {"sent": sent, "failed": failed, "total": len(contacts), "paused": True}
+
         success = False
         error   = None
 
         try:
             # ── Usar plantilla aprobada (para broadcasts masivos) ──
-            if hasattr(broadcast, "template_name") and broadcast.template_name:
+            if broadcast.template_name:
                 success = await send_template(
                     to        = contact.phone,
                     name      = broadcast.template_name,
@@ -111,25 +129,25 @@ def create_broadcast(
     db:            Session,
     title:         str,
     message:       str,
-    segment:       str            = "todos",
-    segment_value: str            = "",
-    media_url:     str            = "",
-    media_type:    str            = "",
-    template_name: str            = "",
+    segment:       str             = "todos",
+    segment_value: str             = "",
+    media_url:     str             = "",
+    media_type:    str             = "",
+    template_name: str             = "",
     scheduled_at:  datetime | None = None,
-    created_by:    str            = "admin",
+    created_by:    str             = "admin",
 ) -> Broadcast:
     b = Broadcast(
-        title          = title,
-        message        = message,
-        segment        = segment,
-        segment_value  = segment_value or None,
-        media_url      = media_url or None,
-        media_type     = media_type or None,
-        template_name  = template_name or None,
-        status         = "scheduled" if scheduled_at else "draft",
-        scheduled_at   = scheduled_at,
-        created_by     = created_by,
+        title         = title,
+        message       = message,
+        segment       = segment,
+        segment_value = segment_value or None,
+        media_url     = media_url or None,
+        media_type    = media_type or None,
+        template_name = template_name or None,
+        status        = "scheduled" if scheduled_at else "draft",
+        scheduled_at  = scheduled_at,
+        created_by    = created_by,
     )
     db.add(b)
     db.commit()
