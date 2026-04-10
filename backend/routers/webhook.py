@@ -3,7 +3,9 @@
 Webhook de WhatsApp Cloud API.
 GET  /webhook → verificación Meta
 POST /webhook → procesamiento de mensajes entrantes
+Soporta: text, button (botón de plantilla), interactive
 """
+import json
 import logging
 from datetime import datetime
 from fastapi import APIRouter, Request, Response, Depends
@@ -24,28 +26,70 @@ router   = APIRouter(tags=["webhook"])
 def _extract_message(body: dict) -> tuple[str, str, str, str] | None:
     """
     Extrae (phone, name, text, message_id) del payload de Meta.
-    Retorna None si no es un mensaje de texto válido.
+    Soporta: text, button (quick reply de plantilla), interactive.
+    Loguea el payload completo para diagnóstico.
     """
     try:
         entry   = body["entry"][0]
         changes = entry["changes"][0]
         value   = changes["value"]
 
+        # Notificación de estado (delivered, read, sent, failed)
         if "messages" not in value:
+            statuses = value.get("statuses", [])
+            if statuses:
+                st = statuses[0]
+                log.info(
+                    f"WA status update → "
+                    f"msg_id={st.get('id')} "
+                    f"status={st.get('status')} "
+                    f"to={st.get('recipient_id')} "
+                    f"timestamp={st.get('timestamp')}"
+                )
+            else:
+                log.info(f"WA payload sin mensajes: {json.dumps(value)[:200]}")
             return None
 
-        msg  = value["messages"][0]
-        meta = value["contacts"][0]
+        msg      = value["messages"][0]
+        meta     = value["contacts"][0]
+        phone    = msg["from"]
+        name     = meta.get("profile", {}).get("name", "")
+        msg_type = msg.get("type", "unknown")
+        mid      = msg["id"]
 
-        if msg.get("type") != "text":
-            return None
+        log.info(f"WA← tipo={msg_type} | de={phone} | name='{name}' | msg_id={mid}")
 
-        phone = msg["from"]
-        name  = meta.get("profile", {}).get("name", "")
-        text  = msg["text"]["body"].strip()
-        mid   = msg["id"]
-        return phone, name, text, mid
-    except (KeyError, IndexError):
+        # ── Texto libre ───────────────────────────────────────────
+        if msg_type == "text":
+            text = msg["text"]["body"].strip()
+            log.info(f"WA← texto: '{text[:100]}'")
+            return phone, name, text, mid
+
+        # ── Botón de plantilla (quick reply) ──────────────────────
+        if msg_type == "button":
+            text = msg["button"]["text"].strip()
+            log.info(f"WA← botón de plantilla: '{text}'")
+            return phone, name, text, mid
+
+        # ── Respuesta interactiva (list/button reply) ─────────────
+        if msg_type == "interactive":
+            interactive = msg.get("interactive", {})
+            itype       = interactive.get("type", "")
+            if itype == "button_reply":
+                text = interactive["button_reply"]["title"].strip()
+            elif itype == "list_reply":
+                text = interactive["list_reply"]["title"].strip()
+            else:
+                text = json.dumps(interactive)[:100]
+            log.info(f"WA← interactive tipo={itype}: '{text}'")
+            return phone, name, text, mid
+
+        # ── Otros tipos (imagen, audio, video, sticker, etc.) ─────
+        log.info(f"WA← tipo no manejado: {msg_type} — payload={json.dumps(msg)[:200]}")
+        return None
+
+    except (KeyError, IndexError) as e:
+        log.warning(f"WA← payload inesperado: {e} | body={json.dumps(body)[:300]}")
         return None
 
 
@@ -146,12 +190,11 @@ async def receive_message(request: Request, db: Session = Depends(get_db)):
         db.commit()
 
     # ── Enviar respuesta ──────────────────────────────────────────
+    log.info(f"  🤖  Bot → {phone}: '{reply[:80]}'")
     ok = await send_text(phone, reply)
 
     # ── Guardar respuesta del bot ─────────────────────────────────
     db.add(Conversation(phone=phone, role="assistant", message=reply, intent=intent))
     db.commit()
-
-    log.info(f"  🤖  Bot → {phone}: {reply[:60]}")
 
     return {"ok": True, "sent": ok}
