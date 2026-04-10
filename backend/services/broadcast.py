@@ -1,4 +1,4 @@
-# 📄 backend/services/broadcast.py  ← REEMPLAZA EL ANTERIOR
+# 📄 backend/services/broadcast.py
 """
 Motor de envíos masivos (broadcasts).
 Soporta texto libre y plantillas aprobadas por Meta.
@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from models.broadcast      import Broadcast
 from models.broadcast_log  import BroadcastLog
 from models.contact        import Contact
-from services.whatsapp     import send_text, send_image, send_audio, send_document, send_template
+from services.whatsapp     import send_text, send_image, send_video, send_audio, send_document, send_template
 from services.segmentation import get_contacts_for_broadcast
 
 log = logging.getLogger("abelardo_bot")
@@ -64,7 +64,7 @@ async def execute_broadcast(db: Session, broadcast_id: int) -> dict:
     )
 
     broadcast.status        = "sending"
-    broadcast.total_targets = len(contacts)  # total real siempre
+    broadcast.total_targets = len(contacts)
     db.commit()
 
     # Recuperar contadores previos
@@ -94,6 +94,9 @@ async def execute_broadcast(db: Session, broadcast_id: int) -> dict:
                 )
             elif broadcast.media_type == "image" and broadcast.media_url:
                 success = await send_image(contact.phone, broadcast.media_url, broadcast.message)
+            elif broadcast.media_type == "video" and broadcast.media_url:
+                # ✅ Caso video: envía el video con el texto como caption
+                success = await send_video(contact.phone, broadcast.media_url, broadcast.message)
             elif broadcast.media_type == "audio" and broadcast.media_url:
                 success = await send_audio(contact.phone, broadcast.media_url)
             elif broadcast.media_type == "document" and broadcast.media_url:

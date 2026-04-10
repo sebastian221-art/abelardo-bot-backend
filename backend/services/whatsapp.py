@@ -41,7 +41,6 @@ async def send_template(to: str, name: str, image_url: str = "", param: str = ""
     """
     components = []
 
-    # Encabezado con imagen
     if image_url:
         components.append({
             "type": "header",
@@ -51,7 +50,6 @@ async def send_template(to: str, name: str, image_url: str = "", param: str = ""
             }]
         })
 
-    # Cuerpo con variable {{1}}
     if param:
         components.append({
             "type": "body",
@@ -66,8 +64,8 @@ async def send_template(to: str, name: str, image_url: str = "", param: str = ""
         "to":                to,
         "type":              "template",
         "template": {
-            "name":      name,
-            "language":  {"code": "es"},
+            "name":       name,
+            "language":   {"code": "es"},
             "components": components
         }
     })
@@ -79,6 +77,16 @@ async def send_image(to: str, image_url: str, caption: str = "") -> bool:
         "to":                to,
         "type":              "image",
         "image":             {"link": image_url, "caption": caption},
+    })
+
+
+async def send_video(to: str, video_url: str, caption: str = "") -> bool:
+    """Envía un video MP4. WhatsApp acepta: mp4, 3gpp — máx 16 MB."""
+    return await _post({
+        "messaging_product": "whatsapp",
+        "to":                to,
+        "type":              "video",
+        "video":             {"link": video_url, "caption": caption},
     })
 
 
