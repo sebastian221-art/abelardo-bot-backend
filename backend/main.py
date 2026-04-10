@@ -1,4 +1,4 @@
-# 📄 backend/main.py  ← REEMPLAZA EL ANTERIOR
+# 📄 backend/main.py
 import logging, sys, threading, urllib.request
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
@@ -85,7 +85,6 @@ async def lifespan(app: FastAPI):
     print(f"  {CYAN}📖  Docs{RESET}     →  http://localhost:8000/docs")
     print(f"{sep}\n")
 
-    # Keep-alive thread
     def _keep_alive():
         import time
         time.sleep(120)
@@ -109,11 +108,19 @@ app = FastAPI(
     docs_url="/docs" if settings.DEBUG else None,
 )
 
-app.middleware("http")(_log_req)
+# ✅ CORS corregido — origen explícito requerido cuando allow_credentials=True
 app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_credentials=True,
-    allow_methods=["*"], allow_headers=["*"],
+    CORSMiddleware,
+    allow_origins=[
+        "https://abelardo-bot-panel.vercel.app",
+        "http://localhost:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
+
+app.middleware("http")(_log_req)
 
 app.include_router(webhook_router)
 app.include_router(api_router)
