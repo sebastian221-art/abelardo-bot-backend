@@ -1,9 +1,10 @@
-# 📄 backend/services/ai.py
+# 📄 backend/services/ai.py  ← REEMPLAZA EL ANTERIOR
 """
 Motor de IA del ChatBot Abelardo 2026.
 - Detecta la intención del mensaje
 - Consulta el RAG con documentos de Abelardo
 - Genera la respuesta con tono de campaña
+- Envía mensaje de testigos de mesa UNA SOLA VEZ por contacto
 """
 import logging
 from groq import Groq
@@ -15,6 +16,50 @@ log      = logging.getLogger("abelardo_bot")
 client   = Groq(api_key=settings.GROQ_API_KEY)
 
 MODEL = "llama-3.3-70b-versatile"
+
+TESTIGOS_MSG = (
+    "\n\n🇨🇴 ¡Llegó el momento de unirnos por la Defensa de la Patria!\n\n"
+    "Te invitamos a inscribirte como *TESTIGO DE MESA*, protejamos nuestros votos 💪🏻🧐🐯\n\n"
+    "Si eres mayor de edad, registra tus datos aquí:\n"
+    "https://defensores.defensoresdelapatria.com/registro.php?departamento=27&nombre=SANTANDER&tipo=departamento\n\n"
+    "Te estaremos contactando para que accedas a las capacitaciones.\n\n"
+    "✅ Si ya llenaste el formulario, confírmalo escribiendo al 📱 *320 852 1491*"
+)
+
+
+def _ya_recibio_testigos(phone: str) -> bool:
+    """Verifica si este contacto ya recibió el mensaje de testigos."""
+    try:
+        from models.database import SessionLocal
+        from models.contact  import Contact
+        db = SessionLocal()
+        contact = db.query(Contact).filter(Contact.phone == phone).first()
+        db.close()
+        if not contact:
+            return False
+        # Usamos el campo 'segment' como flag temporal
+        # Si tiene 'testigos_enviado' en metadata o segment, ya lo recibió
+        return bool(contact.segment and 'testigos' in str(contact.segment))
+    except Exception as e:
+        log.error(f"Error verificando testigos para {phone}: {e}")
+        return False
+
+
+def _marcar_testigos_enviado(phone: str):
+    """Marca que este contacto ya recibió el mensaje de testigos."""
+    try:
+        from models.database import SessionLocal
+        from models.contact  import Contact
+        db = SessionLocal()
+        contact = db.query(Contact).filter(Contact.phone == phone).first()
+        if contact:
+            # Guardamos en segment que ya recibió el mensaje
+            contact.segment = 'testigos_enviado'
+            db.commit()
+        db.close()
+    except Exception as e:
+        log.error(f"Error marcando testigos para {phone}: {e}")
+
 
 # ── Intenciones que el bot puede detectar ────────────────────────
 INTENTS = {
@@ -66,9 +111,9 @@ usa el contexto del programa de gobierno para dar respuestas concretas."""
 
 
 async def process_message(
-    phone:    str,
-    message:  str,
-    history:  list[dict],
+    phone:        str,
+    message:      str,
+    history:      list[dict],
     contact_name: str = "",
 ) -> tuple[str, str]:
     """
@@ -81,14 +126,17 @@ async def process_message(
 
     # Mensajes especiales sin IA
     if intent == "optin":
-        return (
+        reply = (
             f"¡Bienvenido{',' + ' ' + contact_name if contact_name else ''} al movimiento! 🇨🇴\n\n"
             "Gracias por unirte. Te mantendré informado con las últimas noticias "
             "de la campaña de Abelardo de la Espriella.\n\n"
             "Puedes preguntarme sobre sus propuestas, debates o eventos en tu ciudad. "
-            "Y si quieres dejar de recibir mensajes, solo escribe *STOP*.",
-            intent,
+            "Y si quieres dejar de recibir mensajes, solo escribe *STOP*."
         )
+        if not _ya_recibio_testigos(phone):
+            reply += TESTIGOS_MSG
+            _marcar_testigos_enviado(phone)
+        return reply, intent
 
     if intent == "optout":
         return (
@@ -98,14 +146,17 @@ async def process_message(
         )
 
     if intent == "embajador":
-        return (
+        reply = (
             f"¡Gracias por querer sumarte como embajador! 🌟\n\n"
             "Pronto activaremos el sistema de referidos para que puedas invitar "
             "a tus amigos y familia. Te avisamos cuando esté listo.\n\n"
             "Mientras tanto, comparte nuestros mensajes con quien creas que "
-            "le puede interesar el futuro de Colombia. 🇨🇴",
-            intent,
+            "le puede interesar el futuro de Colombia. 🇨🇴"
         )
+        if not _ya_recibio_testigos(phone):
+            reply += TESTIGOS_MSG
+            _marcar_testigos_enviado(phone)
+        return reply, intent
 
     # ── Respuesta con IA + RAG ────────────────────────────────────
     system = SYSTEM_PROMPT
@@ -138,5 +189,10 @@ async def process_message(
             "Por favor intenta de nuevo en unos minutos o escríbenos a "
             "nuestro canal oficial."
         )
+
+    # Agregar mensaje de testigos UNA SOLA VEZ por contacto
+    if not _ya_recibio_testigos(phone):
+        reply += TESTIGOS_MSG
+        _marcar_testigos_enviado(phone)
 
     return reply, intent
