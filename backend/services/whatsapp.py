@@ -72,7 +72,7 @@ async def send_template(to: str, name: str, image_url: str = "", param: str = ""
         "type":              "template",
         "template": {
             "name":       name,
-            "language":   {"code": "es"},
+            "language":   {"code": "es_ES"},
             "components": components,
         }
     })
