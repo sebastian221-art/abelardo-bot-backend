@@ -1,7 +1,7 @@
 # 📄 backend/services/broadcast.py  ← REEMPLAZA EL ANTERIOR
 """
 Motor de envíos masivos (broadcasts).
-Soporta texto libre y plantillas aprobadas por Meta (con o sin imagen).
+Soporta texto libre y plantillas aprobadas por Meta (con o sin imagen, con o sin variables).
 Al reanudar, salta los contactos que ya recibieron el mensaje.
 """
 import asyncio
@@ -67,12 +67,14 @@ async def execute_broadcast(db: Session, broadcast_id: int) -> dict:
 
         try:
             if broadcast.template_name:
-                # Plantilla con o sin imagen — si no hay media_url se envía sin imagen
+                # Si la plantilla tiene variable {{1}} en el mensaje, usar el nombre
+                # Si no tiene variables, pasar param="" para no enviar parámetros extra
+                has_param = broadcast.message and "{{" in (broadcast.message or "")
                 success = await send_template(
                     to        = contact.phone,
                     name      = broadcast.template_name,
                     image_url = broadcast.media_url or "",
-                    param     = contact.name or "Defensor",
+                    param     = (contact.name or "Defensor") if has_param else "",
                 )
             elif broadcast.media_type == "image" and broadcast.media_url:
                 success = await send_image(contact.phone, broadcast.media_url, broadcast.message)
